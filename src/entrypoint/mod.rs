@@ -9,8 +9,10 @@ use crate::{docker, health::{self}};
 /// Entrypoint for the application
 pub fn run() {
     // Ensure all server containers are stopped before starting
-    info!(target: "lazymc-docker-proxy::entrypoint", "Ensuring all server containers are stopped...");
-    docker::stop_all_containers();
+    // TODO: should we just let the containers sleep normaly after time has expired?
+    //  with this commented out we need to have, lazymc.server.probe_on_start: true to trick the system that the containers are awake
+    //info!(target: "lazymc-docker-proxy::entrypoint", "Ensuring all server containers are stopped...");
+    //docker::stop_all_containers();
 
     let labels_list = docker::get_container_labels();
     let mut configs: Vec<Config> = Vec::new();

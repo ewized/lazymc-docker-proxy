@@ -35,6 +35,12 @@ pub fn stop(group: String) {
         vec![format!("lazymc.group={}", group)],
     );
 
+    // https://docker-minecraft-server.readthedocs.io/en/latest/misc/autopause-autostop/autopause/
+    // We need to disable the watchdog process on the mc server
+    // NOT TESTED BUT 1.21.2 > may need to disable MC pause via pause-when-empty-seconds=-1
+    // TESTED AND IS NEEDED
+    // max-tick-time=-1
+
     // find all matching containers and then stop them using .then()
     Runtime::new().unwrap().block_on(
         docker
@@ -44,17 +50,17 @@ pub fn stop(group: String) {
                 ..Default::default()
             }))
             .then(|containers| async {
-                debug!(target: "lazymc-docker-proxy::docker", "Found {} container(s) to stop", containers.as_ref().unwrap().len());
+                debug!(target: "lazymc-docker-proxy::docker", "Found {} container(s) to pause", containers.as_ref().unwrap().len());
                 for container in containers.unwrap() {
-                    info!(target: "lazymc-docker-proxy::docker", "Stopping container: {}", container.names.unwrap().first().unwrap());
+                    info!(target: "lazymc-docker-proxy::docker", "Pausing container: {}", container.names.unwrap().first().unwrap());
                     if let Err(err) = docker
-                        .stop_container(
-                            container.id.as_ref().unwrap(), 
-                            None::<StopContainerOptions>
+                        .pause_container(
+                            container.id.as_ref().unwrap()
+                            //None::<StopContainerOptions>
                         )
                         .await
                     {
-                        error!(target: "lazymc-docker-proxy::docker", "Error stopping container: {}", err);
+                        error!(target: "lazymc-docker-proxy::docker", "Error pausing container: {}", err);
                     }
                 }
                 return future::ready(()).await;
@@ -71,7 +77,7 @@ pub fn start(group: String) {
         HashMap::<String, Vec<String>>::new();
 
     // find all matching exited containers
-    list_container_filters.insert("status".to_string(), vec!["exited".to_string()]);
+    list_container_filters.insert("status".to_string(), vec!["paused".to_string(), "exited".to_string()]);
     list_container_filters.insert(
         "label".to_string(),
         vec![format!("lazymc.group={}", group)],
@@ -86,18 +92,32 @@ pub fn start(group: String) {
                 ..Default::default()
             }))
             .then(|containers| async {
-                debug!(target: "lazymc-docker-proxy::docker", "Found {} container(s) to start", containers.as_ref().unwrap().len());
+                debug!(target: "lazymc-docker-proxy::docker", "Found {} container(s) to wake", containers.as_ref().unwrap().len());
                 for container in containers.unwrap() {
-                    info!(target: "lazymc-docker-proxy::docker", "Starting container: {}", container.names.unwrap().first().unwrap());
-                    if let Err(err) = docker
-                        .start_container(
-                            container.id.as_ref().unwrap(),
-                            None::<StartContainerOptions<&str>>,
-                        )
-                        .await
-                    {
-                        error!(target: "lazymc-docker-proxy::docker", "Error starting container: {}", err);
+                    if container.state == Some("paused".to_string()) {
+                        info!(target: "lazymc-docker-proxy::docker", "Unpausing container: {}", container.names.unwrap().first().unwrap());
+                        if let Err(err) = docker
+                            .unpause_container(
+                                container.id.as_ref().unwrap(),
+                                //None::<StartContainerOptions<&str>>,
+                            )
+                            .await
+                        {
+                            error!(target: "lazymc-docker-proxy::docker", "Error unpausing container: {}", err);
+                        }
+                    } else {
+                        info!(target: "lazymc-docker-proxy::docker", "Starting container: {}", container.names.unwrap().first().unwrap());
+                        if let Err(err) = docker
+                            .start_container(
+                                container.id.as_ref().unwrap(),
+                                None::<StartContainerOptions<&str>>,
+                            )
+                            .await
+                        {
+                            error!(target: "lazymc-docker-proxy::docker", "Error starting container: {}", err);
+                        }
                     }
+                    
                 }
                 return future::ready(()).await;
             }),
